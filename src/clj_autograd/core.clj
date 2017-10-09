@@ -72,6 +72,14 @@
                                          a))
                                      cs)))))}))
 
+;; TODO pytorch: 2nd order gradients with grad_fn
+(comment
+  (let [a (tape (dv [1 1 1]) true)
+        b (tape (dv [1 1 1]) true)
+        out (add a b)
+        grads ((:backward out) out (dv [1 1 1]))]
+    (-> grads :children first :grad)
+    ))
 
 (defn sub
   ([a]
@@ -161,15 +169,35 @@
                      (update :children
                              (fn [[m v]]
                                [(if (:requires-grad? m)
-                                  (throw (ex-info "Gradient not supported yet."
-                                                  {:op mul :val m}))
+                                  ((back-fn m) m (rk grad @(:data v)))
                                   m)
                                 (if (:requires-grad? v)
                                   ((back-fn v) v (mv (trans @(:data m)) grad)) 
                                   v)]))))}))
 
 
+(defn mmul [a b]
+  (let [data (atom (mm @(:data a) @(:data b)))]
+    {:data data
+     :id (uuid)
+     :children [a b]
+     :requires-grad? (or (:requires-grad? a) (:requires-grad? b))
+     :backward (fn [{:keys [children] :as node} grad]
+                 (-> node
+                     (assoc :grad grad)
+                     (update :children
+                             (fn [[a b]]
+                               [(if (:requires-grad? a)
+                                  ((back-fn a) a (mm grad (trans @(:data b))))
+                                  a)
+                                (if (:requires-grad? b)
+                                  ((back-fn b) b (mm (trans @(:data a)) grad)) 
+                                  b)]))))}))
+
+
+
 (comment
+
   (let [X (tape (trans (dge 1 2 [1 3])))
         Y (tape (dv [-10 -30]))
         c (tape 0 true)
@@ -343,7 +371,7 @@
     (loop [i 1000]
       (when (pos? i)
         (let [Y* (sigmoid (add (mul X b) (broadcast-like c Y)))
-              out (bcrossent Y* Y) 
+              out (bcrossent Y* Y)
               grads ((:backward out) out 1)]
           (when (zero? (mod i 100))
             (prn "Loss:" @(:data out) ", b:"  @(:data b) @(:data c)))
@@ -353,6 +381,23 @@
 
 
 
+(comment
+
+  (defn rand-mat [m n]
+    (dge m n (take (* m n) (repeatedly #(- (rand) 0.5)))))
+
+
+  (let [x (tape (dge 3 2 [1 2 3 4 5 6]))
+        in-dim 3
+        h-dim 2
+        w1 (tape (rand-mat h-dim in-dim) true)
+        h1 (sigmoid (mmul w1 x))
+        w2 (tape (rand-mat 1 h-dim) true)
+        h2 (sigmoid (mmul w2 h1))
+        _ (swap! (:data h2) row 0) ;; cast to vector
+        loss (bcrossent h2 (tape (dv [1 0])))
+        grads ((:backward loss) loss 1)]
+    (gd! grads)))
 
 
 

@@ -62,6 +62,27 @@
                                 (tape (dv [0 0 1]))))
              0.9038682118755978)))))
 
+(deftest mul-test
+  (testing "Matrix vector multiplication."
+    (let [m (tape (dge 2 2 [2 0 0 2]) true)
+          v (tape (dv [2 3]))
+          out (mul m v)
+          grads ((:backward out) out (dv [1 1]))]
+      (is (= (-> grads :children first :grad seq)
+             '((2.0 2.0) (3.0 3.0)))))))
+
+(deftest mmul-test
+  (testing "Matrix matrix multiplication."
+    (let [A (dge 2 3 (repeat (* 2 6) 1))
+          B (dge 3 1 (repeat 3 0.1))
+          delta (dge 2 1 (repeat 2 1.0))
+          out (sigmoid (mmul (tape A true) (tape B true)))
+          grads ((:backward out) out delta #_(trans m))
+          ]
+      (is (= (seq (-> grads :children first :grad))
+             '((0.24445831169074586 0.24445831169074586))))
+      #_@(:data out))))
+
 
 (deftest vector-gradients
   (testing "Test functions that take a vector as first argument."

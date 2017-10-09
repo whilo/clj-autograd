@@ -13,6 +13,26 @@ top.
 
 ## Usage
 
+To build a logistic regression model and do gradient descent with the automatic
+gradient, you can do something like this:
+
+~~~clojure
+(let [X (tape (trans (dge 2 3 [5 2 -1 0 5 2])))
+        Y (tape (dv [1 0 1]))
+        c (tape 1 true)
+        b (tape (dv [1 1]) true)#_(show-grad )]
+    (loop [i 1000]
+      (when (pos? i)
+        (let [Y* (sigmoid (add (mul X b) (broadcast-like c Y)))
+              out (bcrossent Y* Y)
+              grads ((:backward out) out 1)]
+          (when (zero? (mod i 100))
+            (prn "Loss:" @(:data out) ", b:"  @(:data b) ", c:" @(:data c)))
+          (gd! grads)
+          (recur (dec i)))))
+    b)
+~~~
+
 Look at the tests for now.
 
 ## TODO
@@ -21,12 +41,12 @@ Look at the tests for now.
 - identity of Variable? yes, as atom for inplace ops
 - trace shapes
 - 1. demo
-  linear regression DONE
-  gradient check DONE
+  + linear regression DONE
+  + gradient check DONE
 - basic operations to classify MNIST:
 - loss: sub, pow DONE
 - forward with (mini)batches:
-  + mmul
+  + mmul DONE
 - activations:
 - sigmoid DONE
 - requires_grad DONE
