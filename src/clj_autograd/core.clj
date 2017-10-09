@@ -2,25 +2,6 @@
   (:use [uncomplicate.neanderthal core native]
         [uncomplicate.fluokitten core jvm]))
 
-;; TODO
-;; polymorphic product for scalar, vector, matrix, tensor
-;; identity of Variable? yes, as atom for inplace ops
-;; trace shapes
-;; 1. demo
-;; linear regression DONE
-;; gradient check DONE
-;; basic operations to classify MNIST:
-;; loss:
-;; - sub, pow DONE
-;; forward with minibatches:
-;; - mmul
-;; activations:
-;; - sigmoid DONE
-;; requires_grad DONE
-;; optimizer DONE
-;; lazyness?
-;; figure out how to do in-place ops?
-
 (defn p+ ^double [^double x ^double y]
   (+ x y))
 
