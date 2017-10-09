@@ -1,9 +1,14 @@
 # clj-autograd
 
-These are some experiments to bring a pytorch like autograd to Clojure. This is
-not primarily a neural network library, but rather a means of abstraction to
-calculate gradients for scientific computing. `clj-autograd` uses neanderthal at
-the moment, because we want to be as fast as possible.
+These are some experiments to bring
+a
+[pytorch](http://pytorch.org/docs/master/index.html)-like
+[autograd](http://alexey.radul.name/ideas/2013/introduction-to-automatic-differentiation/) to
+Clojure. This is not primarily a neural network library, but rather a means of
+abstraction to calculate gradients for scientific computing. `clj-autograd` uses
+neanderthal at the moment, because we want to be as fast as possible with
+matrices to allow to build competitive deep learning and Bayesian inference on
+top.
 
 
 ## Usage

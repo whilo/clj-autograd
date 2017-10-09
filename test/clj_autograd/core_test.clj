@@ -24,6 +24,7 @@
                                (sub out-m out-p))]
                (Math/abs
                 (- (-> grads :children first :grad (entry i))
+                   ;; numerical gradient
                    (/ (if scalar?
                         out-delta
                         (sum @(:data out-delta))) (* 2 eps))))))))))
