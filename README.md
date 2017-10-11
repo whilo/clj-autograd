@@ -1,15 +1,19 @@
 # clj-autograd
 
-These are some experiments to bring
-a
-[pytorch](http://pytorch.org/docs/master/index.html)-like
-[autograd](http://alexey.radul.name/ideas/2013/introduction-to-automatic-differentiation/) library
+These are some experiments to bring a [pytorch](http://pytorch.org)-like
+autograd
+[1](https://arxiv.org/abs/1502.05767) [2](http://alexey.radul.name/ideas/2013/introduction-to-automatic-differentiation/) library
 to Clojure. This is not primarily a neural network library, but rather a means
 of abstraction to calculate gradients for scientific computing. `clj-autograd`
-uses [neanderthal](http://neanderthal.uncomplicate.org/) at the moment, because
-we want to be as fast as possible with matrices to allow to build competitive
-deep learning and Bayesian inference on top. A core.matrix backend is also
-possible, feel free to drop
+is built with [denisovan](https://github.com/whilo/denisovan),
+a [core.matrix](https://github.com/mikera/core.matrix) backend
+for [neanderthal](http://neanderthal.uncomplicate.org/) at the moment, because
+we want to be as fast as possible with linear algebra and build competitive deep
+learning and Bayesian inference on top. We hope to keep the general autograd
+machinery portable along core.matrix backends, but will explore optionally
+inlined neanderthal operations, where they improve performance.
+
+Feel free to drop
 in [slack](https://clojurians.slack.com/messages/C08PLCRGT/details/)
 or [gitter](https://gitter.im/metasoarous/clojure-datascience) and ask me
 questions.
@@ -24,20 +28,22 @@ To build a logistic regression model and do gradient descent with the automatic
 gradient, you can do something like this:
 
 ~~~clojure
-(let [X (tape (trans (dge 2 3 [5 2 -1 0 5 2]))) ;; toy training data
-      Y (tape (dv [1 0 1])) ;; toy labels
-      c (tape 1 true) ;; intercept
-      b (tape (dv [1 1]) true)] ;; weight vector
-    (loop [i 1000]
-      (when (pos? i)
-        (let [Y* (sigmoid (add (mul X b) (broadcast-like c Y))) ;; calculate estimator
-              out (bcrossent Y* Y) ;; use binary cross-entropy loss
-              grads ((:backward out) out 1)] ;; calculate gradient
-          (when (zero? (mod i 100))
-            (prn "Loss:" @(:data out) ", b:"  @(:data b) ", c:" @(:data c)))
-          (gd! grads) ;; apply gradient descent (mutates tape values)
-          (recur (dec i)))))
-    b)
+(let [X (tape (m/matrix [[5 2] [-1 0] [5 2]]))
+          Y (tape (m/matrix [1 0 1]))
+          c (tape 0 true)
+          b (tape (m/matrix [0 0]) true)]
+      (loop [i 1000]
+        (when (pos? i)
+          (let [Y* (sigmoid (add (mul X b) (broadcast-like c Y)))
+                out (bcrossent Y* Y)
+                grads ((:backward out) out 1)]
+            (when (zero? (mod i 100))
+              (prn "Loss:" @(:data out) ", b:"  @(:data b) ", c:" @(:data c)))
+            (gd! grads)
+            (recur (dec i)))))
+      (is (= (seq @(:data (sigmoid (add (mul X b) (broadcast-like c Y)))))
+             '(0.9998655456159079 0.04813488562019285 0.9998655456159079))))
+
 ~~~
 
 Look also at the tests for more examples.

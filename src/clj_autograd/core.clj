@@ -1,12 +1,17 @@
 (ns clj-autograd.core
+  (:require [clojure.core.matrix :as m]
+            [denisovan.core])
   (:use [uncomplicate.neanderthal core native]
         [uncomplicate.fluokitten core jvm]))
 
-(defn p+ ^double [^double x ^double y]
-  (+ x y))
+(m/set-current-implementation :neanderthal)
 
-(defn p* ^double [^double x ^double y]
-  (* x y))
+(comment
+  (defn p+ ^double [^double x ^double y]
+    (+ x y))
+
+  (defn p* ^double [^double x ^double y]
+    (* x y)))
 
 (defn uuid []
   (java.util.UUID/randomUUID))
@@ -19,23 +24,24 @@
     :requires-grad? requires-grad?
     :id (uuid)}))
 
-(defn ones-like [x]
-  (if (:data x)
-    (tape (ones-like @(:data x)))
-    (fmap (fn ^double [^double a] 1.0)
-          x)))
-
 (defn zeros-like [x]
   (if (:data x)
     (tape (zeros-like @(:data x)))
-    (fmap (fn ^double [^double a] 0.0)
-          x)))
+    (m/zero-array (m/shape x))))
+
+(defn constant-like [x c]
+  (if (:data x)
+    (tape (constant-like @(:data x) c))
+    (m/add (m/zero-array (m/shape x)) c)))
+
+(defn ones-like [x]
+  (constant-like x 1.0))
 
 (defn- back-fn [a]
   (or (:backward a) #(assoc %1 :grad %2)))
 
 (defn broadcast-like [a b]
-  (let [data (atom (ax @(:data a) (ones-like @(:data b))))]
+  (let [data (atom (m/scale (ones-like @(:data b)) @(:data a) ))]
     {:data data
      :id (uuid)
      :children [a]
@@ -46,7 +52,7 @@
                      (update :children
                              (fn [[a]]
                                [(if (:requires-grad? a)
-                                  ((back-fn a) a (dot (ones-like @(:data b)) grad))
+                                  ((back-fn a) a (m/dot (ones-like @(:data b)) grad))
                                   a)]))))}))
 
 
@@ -56,7 +62,7 @@
     grads))
 
 (defn add [a b]
-  (let [data (atom (axpy @(:data a) @(:data b)))]
+  (let [data (atom (m/add @(:data a) @(:data b)))]
     {:data data
      :id (uuid)
      :children [a b]
@@ -74,18 +80,19 @@
 
 ;; TODO pytorch: 2nd order gradients with grad_fn
 (comment
-  (let [a (tape (dv [1 1 1]) true)
-        b (tape (dv [1 1 1]) true)
-        out (add a b)
-        grads ((:backward out) out (dv [1 1 1]))]
-    (-> grads :children first :grad)
-    ))
+  (time
+   (let [a (tape (dv [1 1 1]) true)
+         b (tape (dv [1 1 1]) true)
+         out (add a b)
+         grads ((:backward out) out (dv [1 1 1]))]
+     (-> grads :children first :grad)
+     )))
 
 (defn sub
   ([a]
    (sub (zeros-like a) a))
   ([a b]
-   (let [data (atom (axpy -1.0 @(:data b) @(:data a)))]
+   (let [data (atom (m/sub @(:data a) @(:data b)))]
      {:data data
       :id (uuid)
       :children [a b]
@@ -99,7 +106,7 @@
                                    ((back-fn a) a grad)
                                    a)
                                  (if (:requires-grad? b)
-                                   ((back-fn b) b (ax -1.0 grad))
+                                   ((back-fn b) b (m/sub grad))
                                    b)]))))})))
 
 
@@ -112,7 +119,7 @@
 
 
 (defn inner [a b]
-  (let [data (atom (dot @(:data a) @(:data b)))]
+  (let [data (atom (m/dot @(:data a) @(:data b)))]
     {:data data
      :id (uuid)
      :children [a b]
@@ -123,16 +130,18 @@
                      (update :children
                              (fn [[a b]]
                                [(if (:requires-grad? a)
-                                  ((back-fn a) a (ax grad @(:data b)))
+                                  ((back-fn a) a (m/scale @(:data b) grad))
                                   a)
                                 (if (:requires-grad? b)
-                                  ((back-fn b) b (ax grad @(:data a)))
+                                  ((back-fn b) b (m/scale @(:data a) grad))
                                   b)]))))}))
 
 (comment
   (let [x (dv [1 2 3])
-        out (inner (tape x) (tape x))]
-    @(:data out)))
+        out (inner (tape x true) (tape x))
+        grads ((back-fn out) out 2)]
+    grads
+    #_@(:data out)))
 
 
 
@@ -158,7 +167,7 @@
 
 
 (defn mul [m v]
-  (let [data (atom (mv @(:data m) @(:data v)))]
+  (let [data (atom (m/mmul @(:data m) @(:data v)))]
     {:data data
      :id (uuid)
      :children [m v]
@@ -169,15 +178,15 @@
                      (update :children
                              (fn [[m v]]
                                [(if (:requires-grad? m)
-                                  ((back-fn m) m (rk grad @(:data v)))
+                                  ((back-fn m) m (m/outer-product grad @(:data v)))
                                   m)
                                 (if (:requires-grad? v)
-                                  ((back-fn v) v (mv (trans @(:data m)) grad)) 
+                                  ((back-fn v) v (m/mmul (trans @(:data m)) grad)) 
                                   v)]))))}))
 
 
 (defn mmul [a b]
-  (let [data (atom (mm @(:data a) @(:data b)))]
+  (let [data (atom (m/mmul @(:data a) @(:data b)))]
     {:data data
      :id (uuid)
      :children [a b]
@@ -188,10 +197,10 @@
                      (update :children
                              (fn [[a b]]
                                [(if (:requires-grad? a)
-                                  ((back-fn a) a (mm grad (trans @(:data b))))
+                                  ((back-fn a) a (m/mmul grad (trans @(:data b))))
                                   a)
                                 (if (:requires-grad? b)
-                                  ((back-fn b) b (mm (trans @(:data a)) grad)) 
+                                  ((back-fn b) b (m/mmul (trans @(:data a)) grad)) 
                                   b)]))))}))
 
 
@@ -214,13 +223,14 @@
     b)
 
 
-  (let [X (tape (trans (dge 2 5 [1 3 -1 4 -5 3 -2 -3 -2 0])))
-        Y (tape (dv [1 1 1 1 1]))
+  (let [X (tape (trans (dge 1 10 (range 10))))
+        Y (tape (dv (range 10)))
         c (tape 0 true)
-        b (tape (dv [1 1]) true)]
+        b (tape (dv [0]) true)]
     (loop [i 1000]
       (when (pos? i)
-        (let [out (sub (add (mul X b) (broadcast-like c Y)) Y)
+        (let [Y* (add (mul X b) (broadcast-like c Y))
+              out (sub Y* Y)
               out (inner out out)
               grads ((:backward out) out 1)]
           (when (zero? (mod i 100))
@@ -253,15 +263,13 @@
     grads)) 
 
 
-(defn esigmoid ^double [^double x]
-  (/ 1.0 (+ 1.0 (Math/exp (- x)))))
+(defn sigmoid-g [x]
+  (let [s (m/logistic x)]
+    (m/mul s (m/sub 1.0 s))))
 
-(defn desigmoid ^double [^double x]
-  (let [s (esigmoid x)]
-    (* s (- 1.0 s))))
 
 (defn sigmoid [x]
-  (let [data (atom (fmap esigmoid @(:data x)))]
+  (let [data (atom (m/logistic @(:data x)) #_(fmap esigmoid @(:data x)))]
     {:data data
      :id (uuid)
      :children [x]
@@ -272,9 +280,7 @@
                      (update :children
                              (fn [[x]]
                                [(if (:requires-grad? x)
-                                  ((back-fn x) x (fmap p*
-                                                       (fmap desigmoid @(:data x))
-                                                       grad))
+                                  ((back-fn x) x (m/mul (sigmoid-g @(:data x)) grad))
                                   x)]))))}))
 
 (comment
@@ -282,14 +288,15 @@
         grads ((:backward out) out (dv [1 1 1]))]
     grads))
 
-(defn elog ^double [^double x]
-  (Math/log x))
 
-(defn delog ^double [^double x]
-  (/ 1.0 x))
+(defn log-g [x]
+  (m/div 1.0 x))
+
+(comment
+  (m/div (m/matrix [1 2 3])))
 
 (defn log [x]
-  (let [data (atom (fmap elog @(:data x)))]
+  (let [data (atom (m/log @(:data x)))]
     {:data data
      :id (uuid)
      :children [x]
@@ -300,9 +307,7 @@
                      (update :children
                              (fn [[x]]
                                [(if (:requires-grad? x)
-                                  ((back-fn x) x (fmap p*
-                                                       (fmap delog @(:data x))
-                                                       grad))
+                                  ((back-fn x) x (m/mul (log-g @(:data x)) grad))
                                   x)]))))}))
 
 (comment
@@ -311,7 +316,7 @@
     out))
 
 (defn emul [a b]
-  (let [data (atom (fmap p* @(:data a) @(:data b)))]
+  (let [data (atom (m/mul @(:data a) @(:data b)))]
     {:data data
      :id (uuid)
      :children [a b]
@@ -322,10 +327,10 @@
                      (update :children
                              (fn [[a b]]
                                [(if (:requires-grad? a)
-                                  ((back-fn a) a (fmap p* @(:data b) grad))
+                                  ((back-fn a) a (m/mul @(:data b) grad))
                                   a)
                                 (if (:requires-grad? b)
-                                  ((back-fn b) b (fmap p* @(:data a) grad))
+                                  ((back-fn b) b (m/mul @(:data a) grad))
                                   b)]))))}))
 
 (defn bcrossent [a b]
@@ -364,6 +369,7 @@
   (assoc n :backward (fn [a grad] (prn "grad: " grad) (assoc a :grad grad))))
 
 (comment
+
   (let [X (tape (trans (dge 2 3 [5 2 -1 0 5 2])))
         Y (tape (dv [1 0 1]))
         c (tape 1 true)
@@ -377,7 +383,9 @@
             (prn "Loss:" @(:data out) ", b:"  @(:data b) @(:data c)))
           (gd! grads)
           (recur (dec i)))))
-    b))
+    b)
+
+  )
 
 
 

@@ -1,8 +1,11 @@
 (ns clj-autograd.core-test
   (:require [clojure.test :refer :all]
+            [clj-autograd.core :refer :all]
+            [clojure.core.matrix :as m]
+            ;; TODO remove
             [uncomplicate.neanderthal.core :refer :all]
             [uncomplicate.neanderthal.native :refer :all]
-            [clj-autograd.core :refer :all]))
+            ))
 
 (def eps 10E-4)
 
@@ -118,17 +121,17 @@
 
 (deftest logistic-regression
   (testing "Train a logistic regression."
-    (let [X (tape (trans (dge 2 3 [5 2 -1 0 5 2])))
-          Y (tape (dv [1 0 1]))
+    (let [X (tape (m/matrix [[5 2] [-1 0] [5 2]]))
+          Y (tape (m/matrix [1 0 1]))
           c (tape 0 true)
-          b (tape (dv [0 0]) true)]
+          b (tape (m/matrix [0 0]) true)]
       (loop [i 1000]
         (when (pos? i)
           (let [Y* (sigmoid (add (mul X b) (broadcast-like c Y)))
                 out (bcrossent Y* Y)
                 grads ((:backward out) out 1)]
             #_(when (zero? (mod i 100))
-              (prn "Loss:" @(:data out) ", b:"  @(:data b) @(:data c)))
+              (prn "Loss:" @(:data out) ", b:"  @(:data b) ", c:" @(:data c)))
             (gd! grads)
             (recur (dec i)))))
       (is (= (seq @(:data (sigmoid (add (mul X b) (broadcast-like c Y)))))
